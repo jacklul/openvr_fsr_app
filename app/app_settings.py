@@ -15,7 +15,6 @@ class AppSettings(JsonRepr):
     user_app_counter = len(user_apps.keys())
 
     open_vr_fsr_versions = {
-        'v2.0-mod': 'def3ebaefecfa1d02408b8482dc66f78',
         'v0.5': 'd74d3083e3506d83fac0d95520625eab',
         'v0.6': '18c46267b042cac7c21a2059786e660c',
         'v0.7': 'f3a0706ea3929234a73bdfde58493601',
