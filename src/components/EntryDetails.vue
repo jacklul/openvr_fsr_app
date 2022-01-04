@@ -1,7 +1,6 @@
 <template>
 <div>
-  <b-card :title="entry.name"
-          bg-variant="dark" text-variant="white" class="text-left m-1">
+  <b-card bg-variant="dark" text-variant="white" class="text-left m-1">
     <b-card-sub-title>
       {{ entry.appid }} | {{ entry.path }}
     </b-card-sub-title>
@@ -15,7 +14,7 @@
           />
         </h6>
         <b-form-checkbox-group stacked switches
-                               :disabled="entry.fsrInstalled"
+                               :disabled="entry.fsrInstalled || entry.fovInstalled"
                                :options="entry.openVrDllPaths"
                                v-model="entry.openVrDllPathsSelected"
                                @change="saveEntry"
@@ -63,28 +62,42 @@
       </span>
     </b-card-text>
 
-    <!-- FSR Settings -->
-    <template v-if="entry.fsrInstalled">
-      <h6 class="mt-4">{{ $t('lib.settingsTitle') }}</h6>
-      <div class="mt-1">
-        <Setting v-for="s in entry.settings" :key="s.key" :setting="s" :app-id="entry.id"
-                 :disabled="!entry.fsrInstalled" @setting-changed="updateModSetting(0)"
-                 class="mr-3 mb-3" />
-      </div>
-    </template>
+    <!-- Settings Space -->
+    <div class="mt-4 card bg-dark">
 
-    <!-- Foveated Settings -->
-    <template v-if="entry.fovInstalled">
-      <h6 class="mt-4">{{ $t('lib.settingsTitle') }}</h6>
-      <div class="mt-1">
-        <Setting v-for="s in entry.fov_settings" :key="s.key" :setting="s" :app-id="entry.id"
-                 :disabled="!entry.fovInstalled" @setting-changed="updateModSetting(1)"
-                 class="mr-3 mb-3" />
-      </div>
-    </template>
+      <!-- FSR Settings -->
+      <template v-if="entry.fsrInstalled">
+        <h4 v-if="settingsCategories(0)[0] === null" class="mt-4">{{ $t('lib.settingsTitle') }}</h4>
+        <!-- Categories -->
+        <div class="mt-1 mb-2 text-center" v-for="(category, idx) in settingsCategories(0)" :key="category"
+             :id="'FSR' + idx">
+          <template v-if="category !== null"><h6 class="mt-1">{{ category }}</h6></template>
+          <!-- Settings -->
+          <Setting v-for="s in orderedSettings(0, category)" :key="s.key" :setting="s" :app-id="entry.id"
+                   :disabled="!entry.fsrInstalled" @setting-changed="updateModSetting(0)"
+                   :fixed-width="true" :group-id="'FSR' + idx"
+                   class="mr-3 mb-3" />
+        </div>
+      </template>
+
+      <!-- Foveated Settings -->
+      <template v-if="entry.fovInstalled">
+        <h4 v-if="settingsCategories(1)[0] === null" class="mt-4">{{ $t('lib.settingsTitle') }}</h4>
+        <!-- Categories -->
+        <div class="mt-1 mb-2 text-center" v-for="(category, idx) in settingsCategories(1)" :key="category"
+             :id="'FFR' + idx">
+          <template v-if="category !== null"><h6 class="mt-1">{{ category }}</h6></template>
+          <!-- Settings -->
+          <Setting v-for="s in orderedSettings(1, category)" :key="s.key" :setting="s" :app-id="entry.id"
+                   :disabled="!entry.fovInstalled" @setting-changed="updateModSetting(1)"
+                   :fixed-width="true" :group-id="'FFR' + idx"
+                   class="mr-3 mb-3" />
+        </div>
+      </template>
+    </div>
 
     <!-- Actions -->
-    <div style="position: absolute; top: 1.25rem; right: 1.25rem;">
+    <div style="position: absolute; top: 0.5rem; right: 1.25rem;">
       <template v-if="entry.fsr_compatible !== undefined && entry.fsr_compatible === false">
         <div class="btn btn-sm btn-warning mr-2" :id="entry.id + '-warn'">
           {{ $t('lib.incomp') }}
@@ -122,13 +135,16 @@ export default {
   components: {Setting},
   data: function () {
     return {
-      id: this._uid,
+      id: this._uid
     }
   },
   props: {
     entry: Object, currentFsrVersion: String, currentFovVersion: String, steamLibBusy: Boolean
   },
   methods: {
+    delay: ms => new Promise(res => {
+        setTimeout(res, ms)
+    }),
     launchApp: async function() {
       if (this.steamLibBusy) { return }
       this.$eventHub.$emit('set-busy', true)
@@ -211,6 +227,39 @@ export default {
 
       this.$eventHub.$emit('set-busy', false)
     },
+    _getSettingsByType(modType = 0) {
+      let settings = {}
+      if (modType === 0) {
+        settings = this.entry.settings
+      } else if (modType === 1) {
+        settings = this.entry.fov_settings
+      }
+      return settings
+    },
+    settingsCategories(modType = 0) {
+      let settings = this._getSettingsByType(modType)
+      let categorys = new Set()
+
+      for (const key in settings) {
+        const setting = settings[key]
+        if (setting.category !== undefined) { categorys.add(setting.category) }
+      }
+      if (categorys.size > 0) { return Array.from(categorys).sort() }
+      return [null]
+    },
+    orderedSettings(modType = 0, category = null) {
+      let settings = this._getSettingsByType(modType)
+      if (category === null) { return settings }
+
+      let orderedSettings = {}
+      let orderedKeys = []
+      for (const key in settings) { orderedKeys.push(key) }
+      for (const key in orderedKeys.sort()) {
+        let setting = settings[key]
+        if (setting.category === category) { orderedSettings[key] = setting }
+      }
+      return orderedSettings
+    }
   },
   async mounted() {
     await this.updateMod()

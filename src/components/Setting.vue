@@ -2,18 +2,19 @@
   <div class="setting" v-if="!settingHidden">
     <b-input-group size="sm" class="setting-field">
       <b-input-group-prepend>
-        <b-input-group-text class="info-field">
-          {{ setting.name }}
-          <b-icon v-if="settingDesc !== ''" icon="info-square" class="ml-2 mr-1"
+        <b-input-group-text class="info-field fixed-width-name" :id="nameId">
+          <span class="mr-2">{{ setting.name }}</span>
+          <b-icon v-if="settingDesc !== ''" icon="info-square" class="mr-1"
                   v-b-popover.hover.topright="settingDesc">
           </b-icon>
         </b-input-group-text>
       </b-input-group-prepend>
+
       <b-input-group-append>
 
         <!-- Dropdown Menu -->
         <template v-if="inputType === 'value'">
-          <b-dropdown :text="currentSettingName" :variant="variant"
+          <b-dropdown :text="currentSettingName" :variant="variant" :id="elemId"
                       class="setting-item fixed-width-setting no-border" :disabled="disabled">
             <b-dropdown-item v-for="s in setting.settings" :key="s.value"
                              @click="selectSetting(s)">
@@ -67,14 +68,53 @@
             </template>
           </b-popover>
         </template>
+
+        <!-- Keyboard Key -->
+        <template v-if="inputType === 'key'">
+          <div class="btn btn-secondary setting-item fixed-width-setting" :id="elemId">
+            <b-icon shift-v="-1" icon="keyboard" class="text-white" />
+            <span class="ml-2">{{ settingKeyName }}</span>
+            <b-link @click="startListening" class="text-white ml-2">
+              <b-icon icon="pencil"></b-icon>
+            </b-link>
+          </div>
+        </template>
+
       </b-input-group-append>
     </b-input-group>
+
+    <!-- Keyboard Assign Modal -->
+    <b-modal v-model="listening" centered hide-header-close no-close-on-backdrop no-close-on-esc :id="modalId">
+      <template #modal-title>
+        <b-icon icon="keyboard" variant="primary"></b-icon>
+        <span class="ml-2">{{ setting.name }}</span>
+      </template>
+      <div class="d-block">
+        <p style="font-size: small;" v-if="settingDesc !== ''">{{ settingDesc }}</p>
+        <div :class="eventCaptured ? '' : 'old-setting'">
+          <h5>Hotkey Mapping</h5>
+          <p style="font-size: small;">{{ $t('setting.keyboardAssign') }}</p>
+          <p>
+            <span>Key</span>
+            <span class="ml-2">{{ capturedValueName }}</span>
+          </p>
+        </div>
+      </div>
+
+      <template #modal-footer>
+        <div class="d-block text-right">
+          <b-button v-if="eventCaptured" @click="confirmAssign" variant="success">Confirm</b-button>
+          <b-button class="ml-2" v-if="eventCaptured" @click="startListening" variant="primary">Retry</b-button>
+          <b-button class="ml-2" variant="secondary" @click="abortListening">Abort</b-button>
+        </div>
+      </template>
+    </b-modal>
   </div>
 </template>
 
 <script>
 
-import {minutesToDaytime} from "@/main";
+import {minutesToDaytime, setFixedWidth} from "@/main";
 
 export default {
   name: 'Setting',
@@ -82,6 +122,7 @@ export default {
     return {
       currentSettingValue: {},
       elemId: 'setting' + this._uid, // _uid is a unique identifier for each vue component
+      nameId: 'name' + this._uid,
       settingDesc: '',
       inputType: 'value',
       rangeMin: 0,
@@ -93,14 +134,19 @@ export default {
       showSpinnerInputPopover: false,
       spinnerInputValue: 0,
       spinnerDebounceRate: 2000,
+      listening: false,
+      eventCaptured: false,
+      capturedEvent: null,
+      modalId: 'assign' + this._uid,
     }
   },
   props: {
-    appId: String, setting: Object, variant: String, disabled: Boolean,
+    appId: String, setting: Object, variant: String, disabled: Boolean, fixedWidth: Boolean, groupId: String
   },
   methods: {
     selectSetting: function (s) {
       this.currentSettingValue = s.value
+      if (this.setting.keyName !== undefined) { this.setting.keyName = s.keyName }
       console.log('Emitting setting update', this.setting.key, s.value)
       this.setting.value = s.value
       this.$emit('setting-changed', this.setting, s.value)
@@ -154,6 +200,43 @@ export default {
       }
       return false
     },
+    handleKeyDownEvent: async function (event) {
+      event.preventDefault()
+      if (this.listening && !this.eventCaptured) {
+        this.eventCaptured = true
+        console.log(event)
+        this.capturedEvent = {name: 'Keyboard', value: event.keyCode, keyName: event.key}
+      }
+    },
+    listenToKeyboard: function (remove = false) {
+      // Add or Remove Keydown event listener
+      const m = document.getElementById(this.modalId)
+      if (m !== null && !remove) {
+        console.log('Listening for keyboard events')
+        m.addEventListener('keydown', this.handleKeyDownEvent)
+      } else if (m !== null && remove) {
+        console.log('Removing Keyboard listener')
+        m.removeEventListener('keydown', this.handleKeyDownEvent)
+      }
+    },
+    startListening: function () {
+      this.eventCaptured = false; this.capturedEvent = null; this.listening = true
+      this.$nextTick(() => { this.listenToKeyboard(false) })
+    },
+    abortListening: function () {
+      this.listenToKeyboard(true); this.listening = false; this.eventCaptured = false
+    },
+    confirmAssign: async function () {
+      this.selectSetting(this.capturedEvent)
+      this.abortListening()
+    },
+    getKeyValueName: function(key) {
+      if (key !== undefined && key !== '' && key !== null) { return key.toUpperCase() }
+      return 'Not Set'
+    },
+    updateFixedWidth: async function () {
+      if (this.fixedWidth) { setFixedWidth(this.groupId, this.nameId, this.elemId) }
+    },
   },
   created: function () {
     // Set description
@@ -173,6 +256,9 @@ export default {
           this.settingDesc = this.setting.desc || this.setting.settings[0].desc || ''
           this.$nextTick(() => { this.setupSpinnerDblClick() })
         }
+        if (this.setting.settings[0].settingType === 'key') {
+          this.inputType = 'key'
+        }
       }
     }
   },
@@ -180,6 +266,10 @@ export default {
     if (this.variant === undefined) { this.variant = 'secondary'}
     this.currentSettingValue = this.setting.value
     this.$emit('setting-ready', this)
+  },
+  updated() {
+    // Access after rendering finished
+    this.$nextTick(() => { this.updateFixedWidth() })
   },
   computed: {
     currentSettingName: function () {
@@ -199,7 +289,15 @@ export default {
     },
     spinnerInputState: function () {
       return this.checkSpinnerInputValue(this.spinnerInputValue)
-    }
+    },
+    settingKeyName() {
+      if (this.setting === undefined) { return 'Undefined' }
+      return this.getKeyValueName(this.setting.keyName)
+    },
+    capturedValueName() {
+      if (!this.eventCaptured) { return this.settingKeyName }
+      return this.getKeyValueName(this.capturedEvent.keyName)
+    },
   }
 }
 </script>
