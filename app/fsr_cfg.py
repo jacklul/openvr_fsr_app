@@ -77,12 +77,14 @@ class FsrSettings(OpenVRModSettings):
         self.offsetY = OpenVRModCfgSetting(
             key='offsetY',
             name='Center Offset Y',
+            category='FSR Settings',
             value=0.85,
             settings=[{'settingType': 'range', 'min': 0.01, 'max': 1.99, 'step': 0.01}]
         )
         self.offsetX = OpenVRModCfgSetting(
             key='offsetX',
             name='Center Offset X',
+            category='FSR Settings',
             value=0.95,
             settings=[{'settingType': 'range', 'min': 0.01, 'max': 1.99, 'step': 0.01}]
         )
