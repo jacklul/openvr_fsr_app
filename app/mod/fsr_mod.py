@@ -1,13 +1,13 @@
 from pathlib import Path
 
-from .app_settings import AppSettings
-from .fsr_cfg import FsrSettings
-from .globals import OPEN_VR_DLL
-from .openvr_mod import OpenVRMod, OpenVRModType
+from app.app_settings import AppSettings
+from app.cfg.fsr_cfg import FsrSettings
+from app.globals import OPEN_VR_DLL
+from .base_mod import BaseMod, BaseModType
 
 
-class FsrMod(OpenVRMod):
-    TYPE = OpenVRModType.fsr
+class FsrMod(BaseMod):
+    TYPE = BaseModType.fsr
     VAR_NAMES = {
         'installed': 'fsrInstalled',
         'version': 'fsrVersion',

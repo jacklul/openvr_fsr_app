@@ -3,13 +3,13 @@ import logging
 from pathlib import Path, WindowsPath
 from typing import Optional, Union
 
-from .globals import get_settings_dir, SETTINGS_FILE_NAME, OPEN_VR_DLL, get_data_dir, APPS_STORE_FILE_NAME, get_version, KNOWN_APPS
-from .utils import JsonRepr
+from app.globals import get_settings_dir, SETTINGS_FILE_NAME, OPEN_VR_DLL, get_data_dir, APPS_STORE_FILE_NAME, KNOWN_APPS
+from app.util.utils import JsonRepr
 
 
 class AppSettings(JsonRepr):
-    skip_keys = ['open_vr_fsr_versions', 'open_vr_foveated_versions',
-                 'current_fsr_version', 'current_foveated_version']
+    skip_keys = ['open_vr_fsr_versions', 'open_vr_foveated_versions', 'vrperfkit_versions'
+                 'current_fsr_version', 'current_foveated_version', 'current_vrperfkit_version']
 
     backup_created = False
     needs_admin = False
@@ -34,12 +34,21 @@ class AppSettings(JsonRepr):
         'v0.1': 'f113aa2bbc9e13603fdc99c3944fcc48',
         'v0.2': '51bec8ad9c6860615a71c2449feee780'
     }
+    vrperfkit_versions = {
+        'v0.1': '161e5a771afe5f24c99592c9d4f95c30',
+        'v0.1.1': '0559a8e6a1fc0021f9d5fb4d1cd9cc00',
+        'v0.1.2': 'caed41dd77a7f5873f00215e67dded31',
+        'v0.2': '017212ff2fabff1178462bf32923a6ce',
+        'v0.2.1': '2baca682f41b5046f3245d200b4e3c02'
+    }
     current_fsr_version = 'v2.1.1'
     current_foveated_version = 'v0.2'
+    current_vrperfkit_version = 'v0.2.1'
 
     # Default plugin path
     openvr_fsr_dir: Optional[str] = str(WindowsPath(get_data_dir() / 'openvr_fsr'))
     openvr_foveated_dir: Optional[str] = str(WindowsPath(get_data_dir() / 'openvr_foveated'))
+    vrperfkit_dir: Optional[str] = str(WindowsPath(get_data_dir() / 'vrperfkit'))
 
     def __init__(self):
         self.needs_admin = AppSettings.needs_admin

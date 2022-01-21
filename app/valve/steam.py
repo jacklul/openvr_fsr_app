@@ -7,8 +7,8 @@ from pathlib import Path, WindowsPath
 from typing import Iterable, List, Optional, Tuple
 
 from . import acf
-from ..globals import KNOWN_APPS
-from ..utils import convert_unit, SizeUnit
+from app.globals import KNOWN_APPS
+from app.util.utils import convert_unit, SizeUnit
 
 STEAM_LIBRARY_FOLDERS = 'LibraryFolders'
 STEAM_LIBRARY_FILE = 'libraryfolders.vdf'
@@ -17,12 +17,28 @@ STEAM_APPS_INSTALL_FOLDER = 'common'
 
 
 class SteamApps:
+    STEAM_LOCATION = Path('.')
+
     def __init__(self):
         self.steam_apps, self.known_apps = dict(), dict()
         self.steam_app_names = {m.get('name'): app_id for app_id, m in self.steam_apps.items() if isinstance(m, dict)}
+        detected_steam_location = self.find_steam_location()
 
-    def read_steam_library(self, find_open_vr: bool = False):
-        self.steam_apps, self.known_apps = self.find_installed_steam_games(find_open_vr)
+        if detected_steam_location:
+            SteamApps.STEAM_LOCATION = Path(detected_steam_location)
+
+    @staticmethod
+    def find_steam_location() -> Optional[str]:
+        try:
+            key = registry.OpenKey(registry.HKEY_CURRENT_USER, "Software\Valve\Steam")
+        except FileNotFoundError as e:
+            logging.error(e)
+            return None
+
+        return registry.QueryValueEx(key, "SteamPath")[0]
+
+    def read_steam_library(self):
+        self.steam_apps, self.known_apps = self.find_installed_steam_games()
 
     def find_game_location(self, app_id: int = 0, app_name: str = '') -> Optional[Path]:
         """ Shorthand method to search installed apps via either id or name """
@@ -46,19 +62,9 @@ class SteamApps:
                 return app_folder
 
     @staticmethod
-    def find_steam_location() -> Optional[str]:
-        try:
-            key = registry.OpenKey(registry.HKEY_CURRENT_USER, "Software\Valve\Steam")
-        except FileNotFoundError as e:
-            logging.error(e)
-            return None
-
-        return registry.QueryValueEx(key, "SteamPath")[0]
-
-    @classmethod
-    def find_steam_libraries(cls) -> Optional[List[Path]]:
+    def find_steam_libraries() -> Optional[List[Path]]:
         """ Return Steam Library Path's as pathlib.Path objects """
-        steam_apps_dir = Path(cls.find_steam_location()) / STEAM_APPS_FOLDER
+        steam_apps_dir = SteamApps.STEAM_LOCATION / STEAM_APPS_FOLDER
         steam_lib_file = steam_apps_dir / STEAM_LIBRARY_FILE
         if not steam_lib_file.exists():
             return [steam_apps_dir]
@@ -111,7 +117,7 @@ class SteamApps:
             else:
                 manifest['path'] = abs_p.as_posix()
 
-    def find_installed_steam_games(self, find_open_vr: bool = False) -> Tuple[dict, dict]:
+    def find_installed_steam_games(self) -> Tuple[dict, dict]:
         steam_apps, _known_apps = dict(), KNOWN_APPS
         lib_folders = self.find_steam_libraries()
         if not lib_folders:

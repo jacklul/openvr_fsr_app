@@ -5,7 +5,7 @@ import gevent.event
 
 from . import app_fn
 from .app_settings import AppSettings
-from .runasadmin import run_as_admin
+from app.util.runasadmin import run_as_admin
 
 CLOSE_EVENT = gevent.event.Event()
 
@@ -66,13 +66,18 @@ def set_fsr_dir(directory_str):
 
 
 @eel.expose
-def update_mod(manifest: dict, mod_type: int = 0):
-    return app_fn.update_mod_fn(manifest, mod_type)
+def update_mod(manifest: dict, mod_type: int = 0, write: bool = False):
+    return app_fn.update_mod_fn(manifest, mod_type, write)
 
 
 @eel.expose
 def toggle_mod_install(manifest: dict, mod_type: int = 0):
     return app_fn.toggle_mod_install_fn(manifest, mod_type)
+
+
+@eel.expose
+def reset_mod_settings(manifest: dict, mod_type: int = 0):
+    return app_fn.reset_mod_settings_fn(manifest, mod_type)
 
 
 @eel.expose

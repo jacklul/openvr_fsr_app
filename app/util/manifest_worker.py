@@ -4,11 +4,8 @@ import os
 from pathlib import Path
 from typing import Optional, List
 
-from .foveated_cfg import FoveatedSettings
-from .foveated_mod import FoveatedMod
-from .fsr_cfg import FsrSettings
-from .fsr_mod import FsrMod
-from .globals import OPEN_VR_DLL
+from app.globals import OPEN_VR_DLL, EXE_NAME
+from app.mod.base_mod import get_available_mods
 
 
 class ManifestWorker:
@@ -66,14 +63,6 @@ class ManifestWorker:
             manifest['openVrDllPaths'] = list()
             manifest['openVrDllPathsSelected'] = list()
             manifest['openVr'] = False
-            fsr = FsrSettings()
-            fov = FoveatedSettings()
-            manifest[FsrMod.VAR_NAMES['installed']] = False
-            manifest[FoveatedMod.VAR_NAMES['installed']] = False
-            manifest[FsrMod.VAR_NAMES['settings']] = fsr.to_js()
-            manifest[FoveatedMod.VAR_NAMES['settings']] = fov.to_js()
-            manifest['fovVersion'] = str()
-            manifest['fsrVersion'] = str()
 
             # -- Test for valid path
             try:
@@ -84,49 +73,32 @@ class ManifestWorker:
                 logging.error('Error reading path for: %s %s', manifest.get('name', 'Unknown'), e)
                 continue
 
-            # -- LookUp OpenVr Api location
+            # -- LookUp OpenVr Api location(s)
             try:
                 open_vr_dll_path_ls = ManifestWorker.find_open_vr_dll(Path(manifest['path']))
+                # -- Add OpenVr path info
+                manifest['openVrDllPaths'] = [p.as_posix() for p in open_vr_dll_path_ls]
+                manifest['openVrDllPathsSelected'] = [p.as_posix() for p in open_vr_dll_path_ls]
             except Exception as e:
                 logging.error('Error locating OpenVR dll for: %s %s', manifest.get('name', 'Unknown'), e)
                 continue
 
+            # -- LookUp Executable location(s)
+            try:
+                executable_path_ls = ManifestWorker.find_executables(Path(manifest['path']))
+                # -- Add executables path info
+                manifest['executablePaths'] = [p.as_posix() for p in executable_path_ls]
+                manifest['executablePathsSelected'] = [p.as_posix() for p in executable_path_ls]
+            except Exception as e:
+                logging.error('Error locating Executables for: %s %s', manifest.get('name', 'Unknown'), e)
+                continue
+
             if open_vr_dll_path_ls:
-                # -- Add OpenVr path info
-                manifest['openVrDllPaths'] = [p.as_posix() for p in open_vr_dll_path_ls]
-                manifest['openVrDllPathsSelected'] = [p.as_posix() for p in open_vr_dll_path_ls]
                 manifest['openVr'] = True
 
-                # --
-                # -- FSR
-                # -- Read settings and set 'fsrInstalled' prop
-                cfg_results = list()
-                for p in open_vr_dll_path_ls:
-                    cfg_results.append(fsr.read_from_cfg(p.parent))
-                manifest[FsrMod.VAR_NAMES['installed']] = any(cfg_results)
-
-                # -- Save Fsr settings to manifest as json serializable string
-                manifest[FsrMod.VAR_NAMES['settings']] = fsr.to_js()
-
-                # --
-                # -- Foveated
-                # -- Read settings and set 'fovInstalled' prop
-                cfg_results = list()
-                for p in open_vr_dll_path_ls:
-                    cfg_results.append(fov.read_from_cfg(p.parent))
-                manifest[FoveatedMod.VAR_NAMES['installed']] = any(cfg_results)
-
-                # -- Save Fsr settings to manifest as json serializable string
-                manifest[FoveatedMod.VAR_NAMES['settings']] = fsr.to_js()
-
-            # -- Read Fsr version
-            if manifest[FsrMod.VAR_NAMES['installed']]:
-                fsr = FsrMod(manifest)
-                manifest[FsrMod.VAR_NAMES['version']] = fsr.get_version()
-            # -- Read Foveated version
-            if manifest[FoveatedMod.VAR_NAMES['installed']]:
-                fov = FoveatedMod(manifest)
-                manifest[FoveatedMod.VAR_NAMES['version']] = fov.get_version()
+            if open_vr_dll_path_ls or executable_path_ls:
+                for mod in get_available_mods(manifest):
+                    mod.update_from_disk()
 
         return manifest_ls
 
@@ -137,3 +109,11 @@ class ManifestWorker:
             open_vr_dll_ls.append(file)
 
         return open_vr_dll_ls
+
+    @staticmethod
+    def find_executables(base_path: Path) -> List[Optional[Path]]:
+        executable_ls: List[Optional[Path]] = list()
+        for file in base_path.glob(f'**/{EXE_NAME}'):
+            executable_ls.append(file)
+
+        return executable_ls

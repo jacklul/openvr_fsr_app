@@ -3,65 +3,53 @@ import logging
 import subprocess
 from pathlib import WindowsPath, Path
 
-from .app_settings import AppSettings
-from .foveated_cfg import FoveatedSettings
-from .foveated_mod import FoveatedMod
-from .fsr_cfg import FsrSettings
-from .fsr_mod import FsrMod
-from .globals import USER_APP_PREFIX, get_data_dir, get_version
-from .manifest_worker import ManifestWorker
-from .openvr_mod import OpenVRModType
-from .utils import capture_app_exceptions
-from .valve import steam
+import app
+from app.app_settings import AppSettings
+from app.util.manifest_worker import ManifestWorker
+from app.mod import get_mod, get_available_mods
 
 
 def reduce_steam_apps_for_export(steam_apps) -> dict:
     reduced_dict = dict()
 
     for app_id, entry in steam_apps.items():
-        fsr = FsrMod(entry)
-        fov = FoveatedMod(entry)
-
         reduced_dict[app_id] = dict()
         # Add only necessary data
-        reduced_dict[app_id][FsrMod.VAR_NAMES['settings']] = fsr.settings.to_js(export=True)
-        reduced_dict[app_id][FoveatedMod.VAR_NAMES['settings']] = fov.settings.to_js(export=True)
-        reduced_dict[app_id][FsrMod.VAR_NAMES['installed']] = entry.get(FsrMod.VAR_NAMES['installed'], False)
-        reduced_dict[app_id][FoveatedMod.VAR_NAMES['installed']] = entry.get(FoveatedMod.VAR_NAMES['installed'], False)
-        reduced_dict[app_id][FsrMod.VAR_NAMES['version']] = entry.get(FsrMod.VAR_NAMES['version'], '')
-        reduced_dict[app_id][FoveatedMod.VAR_NAMES['version']] = entry.get(FoveatedMod.VAR_NAMES['version'], '')
-        reduced_dict[app_id]['fsr_compatible'] = entry.get('fsr_compatible', True)
         reduced_dict[app_id]['name'] = entry.get('name')
         reduced_dict[app_id]['sizeGb'] = entry.get('sizeGb')
         reduced_dict[app_id]['path'] = entry.get('path')
         reduced_dict[app_id]['openVrDllPaths'] = entry.get('openVrDllPaths')
         reduced_dict[app_id]['openVrDllPathsSelected'] = entry.get('openVrDllPathsSelected')
+        reduced_dict[app_id]['executablePaths'] = entry.get('executablePaths')
+        reduced_dict[app_id]['executablePathsSelected'] = entry.get('executablePathsSelected')
         reduced_dict[app_id]['openVr'] = entry.get('openVr')
         reduced_dict[app_id]['SizeOnDisk'] = entry.get('SizeOnDisk')
         reduced_dict[app_id]['appid'] = entry.get('appid')
 
+        # Mod specific data
+        if entry.get('openVr'):
+            for mod in get_available_mods(entry):
+                reduced_dict[app_id][mod.VAR_NAMES['settings']] = mod.settings.to_js(export=True)
+                reduced_dict[app_id][mod.VAR_NAMES['installed']] = entry.get(mod.VAR_NAMES['installed'], False)
+                reduced_dict[app_id][mod.VAR_NAMES['version']] = entry.get(mod.VAR_NAMES['version'], '')
+            reduced_dict[app_id]['fsr_compatible'] = entry.get('fsr_compatible', True)
+
     return reduced_dict
 
 
-def get_mod(manifest: dict, mod_type: int = 0):
-    if mod_type == OpenVRModType.fsr:
-        return FsrMod(manifest)
-    elif mod_type == OpenVRModType.foveated:
-        return FoveatedMod(manifest)
-
-
-@capture_app_exceptions
-def _load_steam_apps_with_mod_settings(steam_apps):
+def _load_steam_apps_with_mod_settings(steam_apps, flag_as_user_app=False):
     """ Add or restore complete settings entries """
     for app_id, entry in steam_apps.items():
-        fsr = FsrMod(entry)
-        fov = FoveatedMod(entry)
-        entry[fsr.VAR_NAMES['settings']] = fsr.settings.to_js(export=False)
-        entry[fov.VAR_NAMES['settings']] = fov.settings.to_js(export=False)
+        entry['userApp'] = flag_as_user_app
+
+        if entry.get('openVr'):
+            for mod in get_available_mods(entry):
+                entry[mod.VAR_NAMES['settings']] = mod.settings.to_js(export=False)
+
     return steam_apps
 
 
-@capture_app_exceptions
+@app.util.utils.capture_app_exceptions
 def save_steam_lib(steam_apps):
     logging.info('Updating SteamApp disk cache.')
 
@@ -73,7 +61,7 @@ def save_steam_lib(steam_apps):
             continue
         if entry.get('_showDetails'):
             entry.pop('_showDetails')
-        if entry.get('userApp', False) is True or app_id.startswith(USER_APP_PREFIX):
+        if entry.get('userApp', False) is True or app_id.startswith(app.globals.USER_APP_PREFIX):
             remove_ids.add(app_id)
 
     user_apps = dict()
@@ -86,7 +74,7 @@ def save_steam_lib(steam_apps):
     AppSettings.save()
 
 
-@capture_app_exceptions
+@app.util.utils.capture_app_exceptions
 def load_steam_lib_fn():
     """ Load saved SteamApps from disk """
     steam_apps = _load_steam_apps_with_mod_settings(AppSettings.load_steam_apps())
@@ -94,7 +82,7 @@ def load_steam_lib_fn():
     re_scan_required = False
 
     # -- Re-create disk cache between versions
-    if get_version() != AppSettings.previous_version:
+    if app.globals.get_version() != AppSettings.previous_version:
         re_scan_required = True
 
     # -- Re-scan lib if no cached apps other than user apps
@@ -104,25 +92,25 @@ def load_steam_lib_fn():
     logging.debug(f'Loaded {len(steam_apps.keys())} Steam Apps from disk.')
 
     # -- Add User Apps
-    steam_apps.update(_load_steam_apps_with_mod_settings(AppSettings.user_apps))
+    steam_apps.update(_load_steam_apps_with_mod_settings(AppSettings.user_apps, True))
 
     return json.dumps({'result': True, 'data': steam_apps, 'reScanRequired': re_scan_required})
 
 
-@capture_app_exceptions
+@app.util.utils.capture_app_exceptions
 def get_steam_lib_fn():
     """ Refresh SteamLib and re-scan every app directory """
     logging.debug('Reading Steam Library')
     try:
         # -- Read this machines Steam library
-        steam.apps.read_steam_library(find_open_vr=True)
+        app.steam.apps.read_steam_library()
 
         # -- Create a local copy of Steam Apps dict
         steam_apps = dict()
-        steam_apps.update(steam.apps.steam_apps)
+        steam_apps.update(app.steam.apps.steam_apps)
 
         # -- Remove Library Paths helper entry
-        steam_apps.pop(steam.STEAM_LIBRARY_FOLDERS)
+        steam_apps.pop(app.steam.STEAM_LIBRARY_FOLDERS)
     except Exception as e:
         msg = f'Error getting Steam Lib: {e}'
         logging.error(msg)
@@ -155,24 +143,24 @@ def get_steam_lib_fn():
     return json.dumps({'result': True, 'data': steam_apps})
 
 
-@capture_app_exceptions
-def remove_custom_app_fn(app: dict):
-    if app.get('appid') not in AppSettings.user_apps:
-        return json.dumps({'result': False, 'msg': f'Could not find app with Id: {app.get("appid")}'})
+@app.util.utils.capture_app_exceptions
+def remove_custom_app_fn(app_dict: dict):
+    if app_dict.get('appid') not in AppSettings.user_apps:
+        return json.dumps({'result': False, 'msg': f'Could not find app with Id: {app_dict.get("appid")}'})
 
-    entry = AppSettings.user_apps.pop(app.get('appid'))
+    entry = AppSettings.user_apps.pop(app_dict.get('appid'))
     AppSettings.save()
     logging.debug('App entry: %s %s removed', entry.get('name'), entry.get('appid'))
     return json.dumps({'result': True, 'msg': f'App entry {entry.get("name")} {entry.get("appid")} created.'})
 
 
-@capture_app_exceptions
-def add_custom_app_fn(app: dict):
+@app.util.utils.capture_app_exceptions
+def add_custom_app_fn(app_dict: dict):
     # -- Check path
-    if app.get('path') in (None, ''):
+    if app_dict.get('path') in (None, ''):
         return json.dumps({'result': False, 'msg': 'No valid path provided.'})
 
-    path = Path(app.get('path'))
+    path = Path(app_dict.get('path'))
     if not path.exists():
         return json.dumps({'result': False, 'msg': 'Provided path does not exist.'})
 
@@ -183,45 +171,44 @@ def add_custom_app_fn(app: dict):
 
     # -- Check and find OpenVR
     openvr_paths = [p for p in ManifestWorker.find_open_vr_dll(path)]
-    if not openvr_paths:
-        return json.dumps({'result': False, 'msg': f'No OpenVR dll found in: {path.as_posix()} or any sub directory.'})
+    executable_path_ls = [p for p in ManifestWorker.find_executables(path)]
+    if not openvr_paths and not executable_path_ls:
+        return json.dumps({'result': False, 'msg': f'No OpenVR dll or Executables found in: {path.as_posix()} or '
+                                                   f'any sub directory.'})
 
-    # -- Find installed FSR
-    f = FsrSettings()
-    cfg_results = list()
-    for p in openvr_paths:
-        cfg_results.append(f.read_from_cfg(p.parent))
-
-    # -- Find installed Foveated
-    fov = FoveatedSettings()
-    fov_cfg_results = list()
-    for p in openvr_paths:
-        fov_cfg_results.append(fov.read_from_cfg(p.parent))
-
-    # -- Add User App entry
+    # -- Create User App entry
     AppSettings.user_app_counter += 1
-    app_id = f'{USER_APP_PREFIX}{AppSettings.user_app_counter:03d}'
+    app_id = f'{app.globals.USER_APP_PREFIX}{AppSettings.user_app_counter:03d}'
     logging.debug('Creating User App entry %s', app_id)
-    AppSettings.user_apps[app_id] = {
+    manifest = {
         'appid': app_id,
-        "name": app.get('name', app_id),
+        "name": app_dict.get('name', app_id),
         'path': path.as_posix(),
         'openVrDllPaths': [p.as_posix() for p in openvr_paths],
         'openVrDllPathsSelected': [p.as_posix() for p in openvr_paths],
+        'executablePaths': [p.as_posix() for p in executable_path_ls],
+        'executablePathsSelected': [p.as_posix() for p in executable_path_ls],
         'openVr': True,
-        'settings': f.to_js(),
-        'fov_settings': fov.to_js(),
-        'fsrInstalled': any(cfg_results),
-        'fovInstalled': any(fov_cfg_results),
         'sizeGb': 0, 'SizeOnDisk': 0,
         'userApp': True,
     }
+
+    # -- Add Mod specific data
+    for mod in get_available_mods(manifest):
+        installed_results = list()
+        for p in openvr_paths:
+            installed_results.append(mod.settings.read_from_cfg(p.parent))
+        manifest[mod.VAR_NAMES['settings']] = mod.settings.to_js(export=True)
+        manifest[mod.VAR_NAMES['installed']] = any(installed_results)
+        manifest[mod.VAR_NAMES['version']] = mod.get_version()
+
+    AppSettings.user_apps[app_id] = manifest
     AppSettings.save()
 
     return json.dumps({'result': True, 'msg': f'App entry {app_id} created.'})
 
 
-@capture_app_exceptions
+@app.util.utils.capture_app_exceptions
 def get_fsr_dir_fn():
     if AppSettings.openvr_fsr_dir is not None and Path(AppSettings.openvr_fsr_dir).exists():
         open_fsr_dir = str(WindowsPath(AppSettings.openvr_fsr_dir))
@@ -229,35 +216,29 @@ def get_fsr_dir_fn():
         return open_fsr_dir
 
 
-@capture_app_exceptions
+@app.util.utils.capture_app_exceptions
 def set_fsr_dir_fn(directory_str):
     if not directory_str:
-        directory_str = str(WindowsPath(get_data_dir() / 'openvr_fsr'))
+        directory_str = str(WindowsPath(app.globals.get_data_dir() / 'openvr_fsr'))
     return json.dumps({'result': AppSettings.update_fsr_dir(directory_str)})
 
 
-@capture_app_exceptions
-def update_mod_fn(manifest: dict, mod_type: int = 0):
+@app.util.utils.capture_app_exceptions
+def update_mod_fn(manifest: dict, mod_type: int = 0, write: bool = False):
     mod = get_mod(manifest, mod_type)
     if not mod:
         return json.dumps({'result': False, 'msg': 'No Mod Type provided', 'manifest': manifest})
 
-    mod_installed = mod.manifest.get(mod.VAR_NAMES['installed'], False)
-    if not mod_installed:
-        return json.dumps({'result': True, 'msg': mod.error, 'manifest': mod.manifest})
-
-    cfg_result = mod.update_cfg()
-
-    if cfg_result:
-        mod.manifest[mod.VAR_NAMES['version']] = mod.get_version()
+    if write:
+        update_result = mod.write_updated_cfg()
     else:
-        logging.error('Error updating Fsr config!')
+        update_result = mod.update_from_disk()
 
-    return json.dumps({'result': all((cfg_result, not mod.error)),
+    return json.dumps({'result': all((update_result, not mod.error)),
                        'msg': mod.error, 'manifest': mod.manifest})
 
 
-@capture_app_exceptions
+@app.util.utils.capture_app_exceptions
 def toggle_mod_install_fn(manifest: dict, mod_type: int = 0):
     mod = get_mod(manifest, mod_type)
     mod_installed = mod.manifest.get(mod.VAR_NAMES['installed'], False)
@@ -269,8 +250,7 @@ def toggle_mod_install_fn(manifest: dict, mod_type: int = 0):
     # -- Install
     if not mod_installed:
         install_result = mod.install()
-        if install_result:
-            mod.manifest[mod.VAR_NAMES['version']] = mod.get_version()
+        mod.update_from_disk()
         return json.dumps({'result': install_result, 'msg': mod.error, 'manifest': mod.manifest})
     # -- Uninstall
     elif mod_installed is True:
@@ -280,14 +260,23 @@ def toggle_mod_install_fn(manifest: dict, mod_type: int = 0):
         return json.dumps({'result': uninstall_result, 'msg': mod.error, 'manifest': mod.manifest})
 
 
-@capture_app_exceptions
+@app.util.utils.capture_app_exceptions
+def reset_mod_settings_fn(manifest: dict, mod_type: int = 0):
+    mod = get_mod(manifest, mod_type)
+
+    if mod.reset_settings():
+        update_result = mod.write_updated_cfg()
+        return json.dumps({'result': update_result, 'msg': mod.error, 'manifest': mod.manifest})
+
+    return json.dumps({'result': False, 'msg': mod.error, 'manifest': mod.manifest})
+
+
+@app.util.utils.capture_app_exceptions
 def launch_app_fn(manifest: dict):
     app_id = manifest.get('appid')
     if not app_id:
         return json.dumps({'result': False, 'msg': 'Could not find valid Steam App ID'})
 
-    # steam_path = Path(steam.apps.find_steam_location()) / 'steam.exe'
-    # cmd = [str(WindowsPath(steam_path)), '-applaunch', app_id]
     cmd = f'explorer "steam://rungameid/{app_id}"'
     logging.info('Launching %s', cmd)
 

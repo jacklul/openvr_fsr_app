@@ -1,5 +1,6 @@
 import os
 import logging
+import re
 import sys
 import json
 from pathlib import Path
@@ -7,13 +8,15 @@ from typing import Union
 
 from appdirs import user_log_dir, user_data_dir
 
-from .knownpaths import get_current_user_documents_path
+from app.util.knownpaths import get_current_user_documents_path
 
 OPEN_VR_DLL = 'openvr_api.dll'
+DXGI_DLL = 'dxgi.dll'
+EXE_NAME = '*.exe'
 OPEN_VR_FSR_CFG = 'openvr_mod.cfg'
+VRPERFKIT_CFG = 'vrperfkit.yml'
 APP_NAME = 'openvr_fsr_app'
 DATA_DIR = 'data'
-APP_FRIENDLY_NAME = 'OpenVR FSR App'
 SETTINGS_DIR_NAME = 'openvr_fsr_app'
 USER_APP_PREFIX = '#Usr'
 
@@ -75,8 +78,21 @@ else:
     # -- Running in IDE ---
     FROZEN = False
 
-SETTINGS_FILE_NAME = 'settings.json' if FROZEN else 'settings_dev.json'
-APPS_STORE_FILE_NAME = 'steam_apps.json'
+# Detect PyTest run
+if any(re.findall(r'pytest|py.test', sys.argv[0])):
+    PYTEST = True
+else:
+    PYTEST = False
+
+if not PYTEST:
+    SETTINGS_FILE_NAME = 'settings.json' if FROZEN else 'settings_dev.json'
+else:
+    SETTINGS_FILE_NAME = 'settings_tests.json'
+
+if not PYTEST:
+    APPS_STORE_FILE_NAME = 'steam_apps.json'
+else:
+    APPS_STORE_FILE_NAME = 'steam_apps_tests.json'
 
 
 def check_and_create_dir(directory: Union[str, Path]) -> str:
