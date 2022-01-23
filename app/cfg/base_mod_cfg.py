@@ -1,9 +1,9 @@
-import json
 import logging
 from pathlib import Path
+from shutil import copyfile
 from typing import List, Iterator
 
-from app.globals import OPEN_VR_FSR_CFG
+from app.cfg import ModCfgJsonHandler, ModCfgYamlHandler
 from app.util.utils import JsonRepr
 
 
@@ -22,10 +22,21 @@ class BaseModCfgSetting(JsonRepr):
         self.hidden = hidden
 
 
+class BaseModCfgType:
+    invalid = -1
+    open_vr_mod = 0
+    vrp_mod = 1
+
+
 class BaseModSettings(JsonRepr):
     """ OpenVR Mod cfg base class to handle settings in openvr_mod.cfg configurations. """
-    option_field_names = list()
     cfg_key = str()
+    CFG_FILE = 'config_file.abc'
+    CFG_TYPE = BaseModCfgType.invalid
+
+    def __init__(self, mod_dll_location: Path = None):
+        self.mod_dll_location = mod_dll_location
+        self.option_field_names = self.get_setting_fields()
 
     def get_setting_fields(self) -> List[str]:
         options = list()
@@ -34,53 +45,58 @@ class BaseModSettings(JsonRepr):
                 options.append(attr_name)
         return options
 
-    def _get_options(self) -> Iterator[BaseModCfgSetting]:
+    def get_options(self) -> Iterator[BaseModCfgSetting]:
         for key in self.option_field_names:
             yield getattr(self, key)
 
-    def _get_option_by_key(self, key, parent_key=None) -> BaseModCfgSetting:
-        for option in self._get_options():
+    def get_option_by_key(self, key, parent_key=None) -> BaseModCfgSetting:
+        for option in self.get_options():
             if option.parent == parent_key and key == option.key:
                 return option
 
-    def _update_option(self, option_dict: dict):
-        option = self._get_option_by_key(option_dict.get('key'), option_dict.get('parent'))
+    def update_option(self, option_dict: dict):
+        option = self.get_option_by_key(option_dict.get('key'), option_dict.get('parent'))
         if option:
             option.value = option_dict.get('value')
 
     def read_from_cfg(self, plugin_path: Path) -> bool:
-        cfg = plugin_path / OPEN_VR_FSR_CFG
+        cfg = plugin_path / self.CFG_FILE
         if not cfg.exists():
             return False
 
         try:
-            json_dict = self._cfg_to_json(cfg)
-
-            # -- Check if the cfg key e.g. 'fsr' is defined inside the CFG
-            if self.cfg_key not in json_dict:
-                return False
-
-            self.from_json(json_dict[self.cfg_key])
+            match self.CFG_TYPE:
+                case BaseModCfgType.open_vr_mod:
+                    # -- Read settings to this instance from json
+                    return self.update_from_json_cfg(cfg)
+                case BaseModCfgType.vrp_mod:
+                    # -- Read settings to this instance from yaml
+                    return self.update_from_yaml_cfg(cfg)
         except Exception as e:
-            logging.error('Error reading FSR settings from cfg file: %s', e)
-            return False
-        return True
+            logging.error('Error reading Settings from CFG file: %s', e)
+
+        return False
 
     def write_cfg(self, plugin_path) -> bool:
-        cfg = plugin_path / OPEN_VR_FSR_CFG
+        cfg = plugin_path / self.CFG_FILE
 
         try:
-            with open(cfg, 'w') as f:
-                json.dump(self.to_cfg_json(), f, indent=2)
-            logging.info('Written updated config at: %s', plugin_path)
+            match self.CFG_TYPE:
+                case BaseModCfgType.open_vr_mod:
+                    ModCfgJsonHandler.write_cfg(self, cfg)
+                case BaseModCfgType.vrp_mod:
+                    if not cfg.exists():
+                        copyfile(self.mod_dll_location.parent / cfg.name, cfg)
+                    ModCfgYamlHandler.write_cfg(self, cfg)
         except Exception as e:
-            logging.error('Error writing FSR settings to cfg file: %s', e)
+            logging.error('Error writing Settings to CFG file: %s', e)
             return False
+
+        logging.info('Written updated config at: %s', plugin_path)
         return True
 
-    @staticmethod
-    def delete_cfg(plugin_path) -> bool:
-        cfg = plugin_path / OPEN_VR_FSR_CFG
+    def delete_cfg(self, plugin_path) -> bool:
+        cfg = plugin_path / self.CFG_FILE
         if not cfg.exists():
             return True
 
@@ -92,49 +108,27 @@ class BaseModSettings(JsonRepr):
             return False
         return True
 
-    @staticmethod
-    def _cfg_to_json(cfg_file: Path) -> dict:
-        try:
-            with open(cfg_file, 'r') as f:
-                # -- Remove Inline Comments
-                json_str = str()
-                for line in f.readlines():
-                    if '//' not in line and '#' not in line:
-                        json_str += line
-
-                return json.loads(json_str)
-        except Exception as e:
-            logging.error(f'Error reading CFG file {cfg_file}: {e}')
-
-        return dict()
-
     def to_js(self, export: bool = False) -> list:
-        return [s.to_js_object(export) for s in self._get_options()]
+        return [s.to_js_object(export) for s in self.get_options()]
 
-    def to_cfg_json(self) -> dict:
-        options_dict = dict()
+    def update_from_json_cfg(self, file: Path) -> bool:
+        data = ModCfgJsonHandler.read_cfg(self, file)
+        return True if data else False
 
-        for o in self._get_options():
-            if o.parent:
-                parent_option = self._get_option_by_key(o.parent)
-                if parent_option.key not in options_dict:
-                    options_dict[parent_option.key] = dict()
-                options_dict[parent_option.key][o.key] = o.value
-            else:
-                options_dict[o.key] = o.value
+    def update_from_yaml_cfg(self, file: Path) -> bool:
+        # -- This updates this class directly
+        data = ModCfgYamlHandler.read_cfg(self, file)
 
-        return {self.cfg_key: options_dict}
+        # -- Restore empty data for hidden settings just defining parents
+        for option in self.get_options():
+            if option.hidden:
+                option.value = dict()
 
-    def from_json(self, settings: dict):
-        for key, value in settings.items():
-            if isinstance(value, dict):
-                self._update_option(value)
-            else:
-                self._update_option({'key': key, 'value': value})
+        return True if data else False
 
     def from_js_dict(self, js_object_list: list):
         if not js_object_list:
             return
 
         for option_obj in js_object_list:
-            self._update_option(option_obj)
+            self.update_option(option_obj)

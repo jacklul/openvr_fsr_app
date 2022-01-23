@@ -5,6 +5,7 @@ from typing import Optional, Iterable
 
 import app
 from app.app_settings import AppSettings
+from app.cfg import BaseModCfgType, BaseModSettings
 
 
 class BaseModType:
@@ -31,7 +32,7 @@ class BaseMod:
         """ Mod base class to handle installation/uninstallation
         
         :param dict manifest: The app's Steam manifest with additional settings dict
-        :param app.openvr_mod_cfg.BaseModSettings settings: Cfg settings handler
+        :param BaseModSettings settings: Cfg settings handler
         :param Path mod_dll_location: Path to the OpenVRMod dll to install
         """
         self.manifest = manifest
@@ -81,8 +82,8 @@ class BaseMod:
             return False
 
         cfg_results = list()
-        for open_vr_dll in self._update_engine_dll_paths():
-            if not open_vr_dll:
+        for engine_dll in self._update_engine_dll_paths():
+            if not engine_dll:
                 continue
 
             if write:
@@ -111,7 +112,7 @@ class BaseMod:
         return True
 
     def _update_engine_dll_paths(self):
-        for dll_path in self.manifest.get(self.DLL_LOC_KEY_SELECTED):
+        for dll_path in self.manifest.get(self.DLL_LOC_KEY_SELECTED) or list():
             if not dll_path:
                 self.error = f'{self.DLL_NAME} not found in: ' + self.manifest.get('name')
                 yield None
@@ -146,7 +147,7 @@ class BaseMod:
                     return True
 
             # --- Uninstallation or Restore if installation failed
-            self._uninstall_fsr(org_engine_dll)
+            self._uninstall_mod(org_engine_dll)
         except Exception as e:
             msg = f'Error during OpenVRMod install/uninstall: {e}'
             logging.error(msg)
@@ -154,18 +155,23 @@ class BaseMod:
             return False
         return True
 
-    def _uninstall_fsr(self, org_open_vr_dll: Path):
-        legacy_dll_bak = self.engine_dll.with_suffix('.original')
+    def _uninstall_mod(self, org_engine_dll: Path):
+        # -- Restore original open_vr.dll
+        if self.settings.CFG_TYPE == BaseModCfgType.open_vr_mod:
+            legacy_dll_bak = self.engine_dll.with_suffix('.original')
 
-        if org_open_vr_dll.exists() or legacy_dll_bak.exists():
-            # Remove Fsr dll
-            self.engine_dll.unlink(missing_ok=True)
+            if org_engine_dll.exists() or legacy_dll_bak.exists():
+                # Remove Fsr dll
+                self.engine_dll.unlink(missing_ok=True)
 
-            # Rename original open vr dll
-            if org_open_vr_dll.exists():
-                org_open_vr_dll.rename(self.engine_dll)
-            if legacy_dll_bak.exists():
-                legacy_dll_bak.rename(self.engine_dll)
+                # Rename original open vr dll
+                if org_engine_dll.exists():
+                    org_engine_dll.rename(self.engine_dll)
+                if legacy_dll_bak.exists():
+                    legacy_dll_bak.rename(self.engine_dll)
+        # -- Remove installed dxgi.dll
+        elif self.settings.CFG_TYPE == BaseModCfgType.vrp_mod:
+            self.engine_dll.unlink()
 
         # Remove Cfg
         if not self.settings.delete_cfg(self.engine_dll.parent):
@@ -197,6 +203,8 @@ class BaseMod:
             version_dict = AppSettings.open_vr_fsr_versions
         elif mod_type == BaseModType.foveated:
             version_dict = AppSettings.open_vr_foveated_versions
+        elif mod_type == BaseModType.vrp:
+            version_dict = AppSettings.vrperfkit_versions
 
         for version, hash_str in version_dict.items():
             if file_hash != hash_str:
@@ -230,14 +238,17 @@ class BaseMod:
         return version
 
     def reset_engine_dll_selected_paths(self, manifest):
-        manifest[self.DLL_LOC_KEY_SELECTED] = manifest.get(self.DLL_LOC_KEY, list())
+        manifest[self.DLL_LOC_KEY_SELECTED] = manifest.get(self.DLL_LOC_KEY, list()) or list()
 
     def verify_engine_dll_selected_paths(self, manifest) -> bool:
         """ Verify all selected paths still exist """
         results = list()
-        for selected_engine_dll_path in manifest.get(self.DLL_LOC_KEY_SELECTED, list()):
+        for selected_engine_dll_path in manifest.get(self.DLL_LOC_KEY_SELECTED, list()) or list():
             results.append(selected_engine_dll_path in manifest.get(self.DLL_LOC_KEY))
-        return all(results)
+
+        if results:
+            return all(results)
+        return False
 
 
 def get_mod(manifest: dict, mod_type: int = 0) -> BaseMod:

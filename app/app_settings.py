@@ -8,7 +8,7 @@ from app.util.utils import JsonRepr
 
 
 class AppSettings(JsonRepr):
-    skip_keys = ['open_vr_fsr_versions', 'open_vr_foveated_versions', 'vrperfkit_versions'
+    skip_keys = ['open_vr_fsr_versions', 'open_vr_foveated_versions', 'vrperfkit_versions',
                  'current_fsr_version', 'current_foveated_version', 'current_vrperfkit_version']
 
     backup_created = False
@@ -39,11 +39,12 @@ class AppSettings(JsonRepr):
         'v0.1.1': '0559a8e6a1fc0021f9d5fb4d1cd9cc00',
         'v0.1.2': 'caed41dd77a7f5873f00215e67dded31',
         'v0.2': '017212ff2fabff1178462bf32923a6ce',
-        'v0.2.1': '2baca682f41b5046f3245d200b4e3c02'
+        'v0.2.1': '2baca682f41b5046f3245d200b4e3c02',
+        'v0.2.2': '30531b66aa251f7ee7cfbc9b005d10b3',
     }
     current_fsr_version = 'v2.1.1'
     current_foveated_version = 'v0.2'
-    current_vrperfkit_version = 'v0.2.1'
+    current_vrperfkit_version = 'v0.2.2'
 
     # Default plugin path
     openvr_fsr_dir: Optional[str] = str(WindowsPath(get_data_dir() / 'openvr_fsr'))
@@ -89,6 +90,8 @@ class AppSettings(JsonRepr):
             logging.error('Could not load application settings! %s', e)
             return False
 
+        if not cls.verify_mod_data_dirs():
+            cls.reset_mod_data_dirs()
         return True
 
     @classmethod
@@ -124,6 +127,20 @@ class AppSettings(JsonRepr):
                 entry.update(KNOWN_APPS[app_id])
 
         return steam_apps
+
+    @classmethod
+    def verify_mod_data_dirs(cls):
+        for mod_dir in (cls.openvr_fsr_dir, cls.openvr_foveated_dir, cls.vrperfkit_dir):
+            p = Path(mod_dir)
+            if not p.exists():
+                return False
+        return True
+
+    @classmethod
+    def reset_mod_data_dirs(cls):
+        cls.openvr_fsr_dir = str(WindowsPath(get_data_dir() / 'openvr_fsr'))
+        cls.openvr_foveated_dir = str(WindowsPath(get_data_dir() / 'openvr_foveated'))
+        cls.vrperfkit_dir = str(WindowsPath(get_data_dir() / 'vrperfkit'))
 
     @staticmethod
     def update_fsr_dir(fsr_plugin_dir: Union[str, Path]) -> bool:
