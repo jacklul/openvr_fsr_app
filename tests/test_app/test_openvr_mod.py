@@ -3,22 +3,33 @@ import shutil
 from pathlib import Path
 from typing import Tuple
 
+import app.mod
 from app import app_fn, globals
-from app.mod.base_mod import BaseModType
+from app.mod import BaseModType
 from app.mod.fsr_mod import FsrMod
+from tests.conftest import create_manipulated_settings
 
 
-def test_get_fsr_dir_fn(open_vr_fsr_dir):
-    result = app_fn.get_fsr_dir_fn()
+def test_get_fsr_dir_fn(app_settings, open_vr_fsr_dir):
+    app_settings.mod_data_dirs[0] = open_vr_fsr_dir
+    result = app_fn.get_mod_dir_fn(0)
     assert Path(result) == open_vr_fsr_dir
 
 
-def test_set_fsr_dir_fn(app_settings, input_path):
-    open_vr_fsr_test_dir = input_path / 'mod_dir'
-    result_dict = json.loads(app_fn.set_fsr_dir_fn(open_vr_fsr_test_dir.as_posix()))
+def test_set_fsr_dir_fn(app_settings, open_vr_fsr_test_mod_dir):
+    result_dict = json.loads(app_fn.set_mod_dir_fn(open_vr_fsr_test_mod_dir.as_posix(), 0))
 
     assert result_dict['result'] is True
-    assert Path(app_settings.openvr_fsr_dir) == open_vr_fsr_test_dir
+    assert Path(app_settings.mod_data_dirs[0]) == open_vr_fsr_test_mod_dir
+
+
+def test_reset_fsr_dir_fn(app_settings, open_vr_fsr_dir, open_vr_fsr_test_mod_dir):
+    app_settings.mod_data_dirs[0] = open_vr_fsr_dir
+    json.loads(app_fn.set_mod_dir_fn(open_vr_fsr_test_mod_dir, 0))
+    result_dict = json.loads(app_fn.set_mod_dir_fn('', 0))
+
+    assert result_dict['result'] is True
+    assert Path(app_settings.mod_data_dirs[0]) == open_vr_fsr_dir
 
 
 def _create_test_output(output_path, open_vr_fsr_dir) -> Tuple[Path, Path]:
@@ -72,9 +83,9 @@ def test_update_mod_fn(test_app, output_path, open_vr_fsr_dir):
     open_vr_mod_cfg_output.unlink()
 
 
-def test_toggle_mod_install_fn(app_settings, test_app_writeable):
+def test_toggle_mod_install_fn(app_settings, test_app_writeable, open_vr_fsr_dir):
     # -- Use the actual mod to have a dll bigger than 0 bytes
-    app_settings.openvr_fsr_dir = globals.get_data_dir() / 'openvr_fsr'
+    app_settings.mod_data_dirs[0] = open_vr_fsr_dir
     output_dlls = test_app_writeable['openVrDllPaths']
 
     # -- Test OpenVR Mod installation
@@ -108,3 +119,34 @@ def test_toggle_mod_install_fn(app_settings, test_app_writeable):
         # -- Test config file removed
         cfg_file = Path(written_dll).parent / globals.OPEN_VR_FSR_CFG
         assert cfg_file.exists() is False
+
+
+def test_reset_mod_settings_fn(test_app_writeable):
+    test_set = ([('applyMIPBias', None), ('requireCtrl', 'hotkeys'), ('renderScale', None)],
+                [False, True, 3.00])
+    test_app, test_settings = create_manipulated_settings(test_app_writeable, test_set, app.mod.get_mod(dict(), 0))
+
+    mod = app.mod.get_mod(test_app, 0)
+    result_dict = json.loads(app_fn.reset_mod_settings_fn(mod.manifest, 0))
+    assert result_dict['result'] is True
+
+    manifest = result_dict['manifest']
+    mod_settings = manifest[mod.VAR_NAMES['settings']]
+
+    mod = app.mod.get_mod(dict(), 0)
+    for _s in mod_settings:
+        for _test_s in test_settings:
+            if _s.get('key') == _test_s.get('key') and _s.get('parent') == _test_s.get('parent'):
+                # -- Test reset settings returning actual settings
+                assert _s.get('value') != _test_s.get('value')
+
+                # -- Test reset settings returning default settings
+                option = mod.settings.get_option_by_key(_s.get('key'), _s.get('parent'))
+                assert _s.get('value') == option.value
+
+    # -- Test reset settings written to disk
+    mod = app.mod.get_mod(test_app, 0)
+    mod.update_from_disk()
+    for _test_s in test_settings:
+        option = mod.settings.get_option_by_key(_test_s.get('key'), _test_s.get('parent'))
+        assert option.value != _test_s.get('value')

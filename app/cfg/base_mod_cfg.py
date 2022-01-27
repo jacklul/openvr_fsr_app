@@ -34,8 +34,7 @@ class BaseModSettings(JsonRepr):
     CFG_FILE = 'config_file.abc'
     CFG_TYPE = BaseModCfgType.invalid
 
-    def __init__(self, mod_dll_location: Path = None):
-        self.mod_dll_location = mod_dll_location
+    def __init__(self):
         self.option_field_names = self.get_setting_fields()
 
     def get_setting_fields(self) -> List[str]:
@@ -77,20 +76,18 @@ class BaseModSettings(JsonRepr):
 
         return False
 
-    def write_cfg(self, plugin_path) -> bool:
+    def write_cfg(self, plugin_path: Path, plugin_src_dir: Path) -> bool:
         cfg = plugin_path / self.CFG_FILE
 
-        try:
-            match self.CFG_TYPE:
-                case BaseModCfgType.open_vr_mod:
-                    ModCfgJsonHandler.write_cfg(self, cfg)
-                case BaseModCfgType.vrp_mod:
-                    if not cfg.exists():
-                        copyfile(self.mod_dll_location.parent / cfg.name, cfg)
-                    ModCfgYamlHandler.write_cfg(self, cfg)
-        except Exception as e:
-            logging.error('Error writing Settings to CFG file: %s', e)
-            return False
+        match self.CFG_TYPE:
+            case BaseModCfgType.open_vr_mod:
+                ModCfgJsonHandler.write_cfg(self, cfg)
+            case BaseModCfgType.vrp_mod:
+                if not cfg.exists():
+                    copyfile(plugin_src_dir / cfg.name, cfg)
+                ModCfgYamlHandler.write_cfg(self, cfg)
+            case _:
+                return False
 
         logging.info('Written updated config at: %s', plugin_path)
         return True

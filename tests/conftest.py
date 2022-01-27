@@ -1,13 +1,15 @@
 import shutil
+from typing import Tuple
 
 import pytest
 from pathlib import Path, WindowsPath
-from distutils.dir_util import copy_tree, remove_tree
+from distutils.dir_util import copy_tree
 
 import app
+import app.mod
 from app.app_settings import AppSettings
 from app.util.manifest_worker import ManifestWorker
-from app.mod.base_mod import get_available_mods
+from app.mod import get_available_mods
 
 libraryfolders_content = '''"libraryfolders"
 {{
@@ -37,6 +39,25 @@ shutil.rmtree(test_data_output_path, ignore_errors=True)
 test_data_output_path.mkdir(exist_ok=True)
 
 
+def create_manipulated_settings(test_app_manifest, test_keys_values: Tuple[list, list], mod) -> Tuple[dict, list]:
+    # -- Create Test Settings
+    test_settings = list()
+
+    for _key_pair, _test_value in zip(test_keys_values[0], test_keys_values[1]):
+        _key, _parent = _key_pair
+        test_setting = {'key': _key, 'parent': _parent, 'value': _test_value}
+        test_settings.append(test_setting)
+
+    # -- Manipulate example settings
+    mod_settings = test_app_manifest[mod.VAR_NAMES['settings']]
+    for _s in mod_settings:
+        for _test_s in test_settings:
+            if _s.get('key') == _test_s.get('key') and _s.get('parent') == _test_s.get('parent'):
+                _s['value'] = _test_s.get('value')
+
+    return test_app_manifest, test_settings
+
+
 @pytest.fixture(scope='session')
 def input_path():
     return test_data_input_path
@@ -45,6 +66,11 @@ def input_path():
 @pytest.fixture(scope='session')
 def output_path():
     return test_data_output_path
+
+
+@pytest.fixture(scope='session')
+def open_vr_fsr_test_mod_dir():
+    return test_data_input_path / 'mod_dir'
 
 
 @pytest.fixture(scope='session')
@@ -127,8 +153,13 @@ def test_app_writeable(steam_apps_obj):
     return manifest
 
 
+def pytest_generate_tests(metafunc):
+    if "app_settings" in metafunc.fixturenames:
+        metafunc.parametrize("app_settings", ["app_settings_old", "app_settings"], indirect=True)
+
+
 @pytest.fixture
-def app_settings(steam_apps_obj):
+def app_settings(request, steam_apps_obj):
     manifest = {
         'appid': test_user_app_id,
         "name": 'User Test App',
@@ -136,9 +167,14 @@ def app_settings(steam_apps_obj):
         'sizeGb': 0, 'SizeOnDisk': 0,
         'userApp': True,
     }
-
     _setup_manifest_paths(manifest)
     _setup_manifest_mods(manifest)
+
+    if request.param == "app_settings":
+        AppSettings.mod_data_dirs = dict()
+    elif request.param == "app_settings_old":
+        AppSettings.SETTINGS_FILE_OVR = test_data_input_path / "settings_0.6.4.json"
+        AppSettings.load()
 
     AppSettings.user_apps[test_user_app_id] = manifest
     return AppSettings
@@ -158,9 +194,9 @@ def outdated_apps_app_settings(steam_apps_obj):
     _setup_manifest_mods(manifest)
 
     # -- Remove new
-    manifest.pop(app.VRPerfKitMod.VAR_NAMES['settings'])
-    manifest.pop(app.VRPerfKitMod.DLL_LOC_KEY_SELECTED)
-    manifest.pop(app.VRPerfKitMod.DLL_LOC_KEY)
+    manifest.pop(app.mod.VRPerfKitMod.VAR_NAMES['settings'])
+    manifest.pop(app.mod.VRPerfKitMod.DLL_LOC_KEY_SELECTED)
+    manifest.pop(app.mod.VRPerfKitMod.DLL_LOC_KEY)
 
     AppSettings.user_apps[test_user_app_id] = manifest
     return AppSettings
