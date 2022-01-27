@@ -54,7 +54,7 @@ class VRPerfKitSettings(BaseModSettings):
                  "resolution is 1000x1000. "
                  "NOTE: this is different from how render scale works in SteamVR! A SteamVR "
                  "render scale of 0.5 would be equivalent to renderScale 0.707 in this mod!, ",
-            value=0.77,
+            value=0.80,
             settings=[{'settingType': 'range', 'min': 0.10, 'max': 3.00, 'step': 0.01, 'display': 'floatpercent'}]
         )
         self.upSharpness = BaseModCfgSetting(
@@ -65,7 +65,7 @@ class VRPerfKitSettings(BaseModSettings):
             desc="Configure how much the image is sharpened during upscaling. "
                  "This parameter works differently for each of the upscaling methods, so you "
                  "will have to tweak it after you have chosen your preferred upscaling method.",
-            value=0.7,
+            value=0.9,
             settings=[{'settingType': 'range', 'min': 0.00, 'max': 3.00, 'step': 0.01, 'display': 'floatpercent'}]
         )
         self.upSharpnessRadius = BaseModCfgSetting(
@@ -81,7 +81,7 @@ class VRPerfKitSettings(BaseModSettings):
                  "to visualize the size of the circle. "
                  "Note: to disable this optimization entirely, choose an arbitrary high value "
                  "(e.g. 100) for the radius.",
-            value=0.60,
+            value=0.50,
             settings=[{'settingType': 'range', 'min': 0.20, 'max': 3.00, 'step': 0.01}]
         )
         self.upApplyMIPBias = BaseModCfgSetting(
