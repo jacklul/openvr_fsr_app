@@ -262,6 +262,36 @@ class VRPerfKitSettings(BaseModSettings):
         )
 
         # --
+        # Offsets mod
+        # --
+        self.centerOffset = BaseModCfgSetting(
+            key='centerOffset',
+            name='Center Offset',
+            category='Center Offset',
+            hidden=True,
+            value=dict(),
+            settings=list(),
+        )
+        self.offsetY = BaseModCfgSetting(
+            key='offsetY',
+            name='Offset Y',
+            category=self.centerOffset.category,
+            parent=self.centerOffset.key,
+            desc="",
+            value=0.85,
+            settings=[{'settingType': 'range', 'min': 0.01, 'max': 1.99, 'step': 0.01, 'display': 'floatpercent'}]
+        )
+        self.offsetX = BaseModCfgSetting(
+            key='offsetX',
+            name='Offset X',
+            category=self.centerOffset.category,
+            parent=self.centerOffset.key,
+            desc="",
+            value=0.95,
+            settings=[{'settingType': 'range', 'min': 0.01, 'max': 1.99, 'step': 0.01, 'display': 'floatpercent'}]
+        )
+
+        # --
         # Debug mode
         # --
         self.debugMode = BaseModCfgSetting(
