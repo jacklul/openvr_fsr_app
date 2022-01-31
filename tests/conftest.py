@@ -7,8 +7,10 @@ from distutils.dir_util import copy_tree
 
 import app
 import app.mod
+import app.app_fn
 from app.app_settings import AppSettings
 from app.util.manifest_worker import ManifestWorker
+from app.util.utils import get_name_id
 from app.mod import get_available_mods
 
 libraryfolders_content = '''"libraryfolders"
@@ -25,7 +27,7 @@ test_data_output_path = Path(__file__).parent / 'data' / 'output'
 
 user_app_path = test_data_input_path / 'user_app'
 test_app_path = test_data_input_path / 'steamapps' / 'common' / 'test_app'
-test_user_app_id = 'Usr#001'
+test_user_app_id = f'{app.globals.USER_APP_PREFIX}_{get_name_id(user_app_path.stem)}'
 app_dir = Path(__file__).parent.parent
 
 # -- CleanUp Test settings files/app cache
@@ -66,6 +68,21 @@ def input_path():
 @pytest.fixture(scope='session')
 def output_path():
     return test_data_output_path
+
+
+@pytest.fixture(scope='session')
+def custom_lib_path(input_path):
+    return  input_path / 'custom_dir'
+
+
+@pytest.fixture(scope='session')
+def custom_dir_id(custom_lib_path):
+    return f'{app.globals.CUSTOM_APP_PREFIX}{get_name_id(custom_lib_path.stem)}'
+
+
+@pytest.fixture(scope='session')
+def custom_app_id(custom_dir_id):
+    return f'{custom_dir_id}_{get_name_id("custom_app_writeable")}'
 
 
 @pytest.fixture(scope='session')
@@ -159,7 +176,7 @@ def pytest_generate_tests(metafunc):
 
 
 @pytest.fixture
-def app_settings(request, steam_apps_obj):
+def user_app():
     manifest = {
         'appid': test_user_app_id,
         "name": 'User Test App',
@@ -170,33 +187,16 @@ def app_settings(request, steam_apps_obj):
     _setup_manifest_paths(manifest)
     _setup_manifest_mods(manifest)
 
+    return manifest
+
+
+@pytest.fixture
+def app_settings(request, steam_apps_obj, user_app):
     if request.param == "app_settings":
         AppSettings.mod_data_dirs = dict()
     elif request.param == "app_settings_old":
         AppSettings.SETTINGS_FILE_OVR = test_data_input_path / "settings_0.6.4.json"
         AppSettings.load()
 
-    AppSettings.user_apps[test_user_app_id] = manifest
-    return AppSettings
-
-
-@pytest.fixture
-def outdated_apps_app_settings(steam_apps_obj):
-    manifest = {
-        'appid': test_user_app_id,
-        "name": 'User Test App',
-        'path': user_app_path.as_posix(),
-        'sizeGb': 0, 'SizeOnDisk': 0,
-        'userApp': True,
-    }
-
-    _setup_manifest_paths(manifest)
-    _setup_manifest_mods(manifest)
-
-    # -- Remove new
-    manifest.pop(app.mod.VRPerfKitMod.VAR_NAMES['settings'])
-    manifest.pop(app.mod.VRPerfKitMod.DLL_LOC_KEY_SELECTED)
-    manifest.pop(app.mod.VRPerfKitMod.DLL_LOC_KEY)
-
-    AppSettings.user_apps[test_user_app_id] = manifest
+    app.app_fn.add_custom_app_fn(user_app)
     return AppSettings

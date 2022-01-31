@@ -1,70 +1,43 @@
 <template>
   <div id="main" class="text-left">
-    <b-navbar type="dark" class="pl-0 pr-0">
-      <b-navbar-brand href="#" class="mr-2">
+    <b-navbar type="dark" class="pl-0 pr-0 mt-0 mb-2">
+      <b-navbar-brand class="mr-2" tag="div">
         <b-img width="32px" key="1" src="@/assets/app_logo_inkscape.svg"></b-img>
       </b-navbar-brand>
-      <h4 class="mt-2">{{ appName }} v{{ version }} (modified)</h4>
+      <b-navbar-brand class="mr-2" tag="div">
+        <span class="app-title">{{ appName }} v{{ version }} (modified)</span>
+      </b-navbar-brand>
 
-      <b-navbar-nav class="ml-auto">
-        <!-- Folder -->
-        <!-- FSR Folder Select -->
-        <b-button variant="secondary" size="sm" id="mod-folder">
-          <b-icon icon="folder-fill"></b-icon>
+      <b-navbar-nav class="ml-auto" small>
+        <!-- Folder Management -->
+        <b-button variant="secondary" size="sm" class="mr-2" @click="toggleDirManager"
+                  v-b-popover.hover.top="$t('main.folderSelectClick')">
+          <b-icon class="text-dark" icon="folder-fill"></b-icon>
         </b-button>
 
-        <!-- Folder Select Message Hover -->
-        <b-popover target="mod-folder" triggers="hover">
-          <template v-if="modDataDirs[selectedModType] !== null">
-            <span>{{ $t('main.folderSelect')}}</span><br />
-            <span v-for="modType in modTypes" :key="modType">
-              <i>{{ modDataDirs[modType] }}</i><br />
-            </span><br />
-            <span>{{ $t('main.folderSelectClick')}}</span>
-          </template>
-          <template v-else>
-            <span v-html="$t('main.folderSelectError')" />
-          </template>
-        </b-popover>
-
-        <!-- Folder Select Popover -->
-        <b-popover target="mod-folder" triggers="click">
-          <h5>{{ $t('main.folderPop') }}</h5>
-          <b-dropdown :text="modNames[selectedModType]" size="sm">
-            <b-dropdown-item v-for="modType in modTypes" :key="modType" @click="selectedModType = modType">
-              {{ modNames[modType] }}
-            </b-dropdown-item>
-          </b-dropdown>
-          <p v-html="$t('main.folderPopText')" />
-          <b-form-input size="sm" v-model="modDirInput"
-                        :placeholder="$t('main.folderPopHint')">
-          </b-form-input>
-          <!-- Buttons -->
-          <div class="text-right mt-1">
-            <b-button @click="setModDir(selectedModType)" size="sm" variant="primary"
-                      aria-label="Save">
-              {{ $t('main.folderPopUpdate') }}
-            </b-button>
-            <b-button @click="resetModDir(selectedModType)" size="sm" variant="warning"
-                      class="ml-2">
-              {{ $t('main.folderPopReset') }}
-            </b-button>
-            <b-button @click="$root.$emit('bv::hide::popover', 'mod-folder')"
-                      size="sm" aria-label="Close" class="ml-2">
-              {{ $t('main.folderPopClose') }}
-            </b-button>
-          </div>
-        </b-popover>
-
         <!-- Info Toggle -->
-        <b-button size="sm" variant="secondary" v-b-toggle.info-collapse class="ml-2">
+        <b-button size="sm" variant="secondary" class="mr-2" v-b-toggle.info-collapse>
           <b-icon icon="info-square-fill" />
         </b-button>
 
         <!-- Languages -->
-        <LanguageSwitcher class="ml-2" />
+        <LanguageSwitcher />
       </b-navbar-nav>
     </b-navbar>
+
+    <!-- Dir Manager Modal -->
+    <b-modal size="lg" v-model="showDirManager" hide-header>
+      <DirManager :show-mod-dir="showDirManagerMod"
+                  :show-custom-dir="showDirManagerCustom">
+      </DirManager>
+
+      <!-- Modal Footer -->
+      <template #modal-footer>
+        <b-button variant="secondary" size="sm" @click="showDirManager=false">
+          {{ $t('main.folderPopClose') }}
+        </b-button>
+      </template>
+    </b-modal>
 
     <!-- Info -->
     <b-collapse id="info-collapse">
@@ -110,7 +83,15 @@
 
     <!-- Busy Overlay -->
     <b-overlay no-wrap fixed :show="isBusy" blur="1px" variant="dark" rounded>
-      <b-spinner></b-spinner>
+      <template #overlay>
+        <div class="text-center">
+          <b-spinner></b-spinner>
+          <template v-if="progressMessage !== ''">
+            <div></div>
+            <span class="mt-4">{{ progressMessage }}</span>
+          </template>
+        </div>
+      </template>
     </b-overlay>
   </div>
 </template>
@@ -118,22 +99,18 @@
 <script>
 
 import SteamLibTable from "@/components/SteamLibTable";
-import {getEelJsonObject} from "@/main";
 import Footer from "@/components/Footer";
 import {version} from '../../package.json';
 import LanguageSwitcher from "@/components/LanguageSwitcher";
+import DirManager from "@/components/DirManager";
 
 export default {
   name: 'Main',
   data: function () {
     return {
-      modDirInput: '',
-      modDataDirs: {0: null, 1: null, 2: null},
-      selectedModType: 0,
-      modTypes: [0, 1, 2],
-      modNames: {0: 'Open VR FSR', 1: 'Open VR Foveated', 2: 'VR Performance Toolkit'},
+      showDirManager: false, showDirManagerMod: true, showDirManagerCustom: true,
       version: version,
-      isBusy: false,
+      isBusy: false, progressMessage: '',
       appName: process.env.VUE_APP_FRIENDLY_NAME,
     }
   },
@@ -151,31 +128,20 @@ export default {
         solid: true,
       })
     },
-    setBusy: function (busy) { this.isBusy = busy},
-    getModDir: async function (modType = 0) {
-      const r = await window.eel.get_mod_dir(modType)()
-      if (r !== undefined) { this.modDataDirs[modType] = r }
-    },
-    resetModDir: async function(modType = 0) {
-      modType = Number(modType)
-      this.modDirInput = ''
-      await this.setModDir(modType)
-    },
-    setModDir: async function (modType) {
-      const r = await getEelJsonObject(window.eel.set_mod_dir(this.modDirInput, modType)())
+    setProgressMessage: function (message) {
+      // Set progress message
+      this.progressMessage = message
 
-      if (r !== undefined && r.result) {
-        await this.getModDir(modType)
-        this.makeToast('Updated ' + this.modNames[modType] + ' directory to: ' + this.modDataDirs[modType],
-            'success', this.modNames[modType])
-      } else {
-        this.makeToast('Could not update Mod source directory. Provided path does not exists, ' +
-            'is not accessible or does not contain the PlugIn Dll and cfg file.',
-            'danger', this.modNames[modType])
-        await this.getModDir(modType)
-      }
-      this.$root.$emit('bv::hide::popover', 'mod-folder')
+      // Clear after timeout
+      setTimeout(() => {
+        this.setProgressMessage('')
+      }, 15000)
     },
+    toggleDirManager: function (showMod = true, showCustom = true) {
+      this.showDirManagerMod = showMod; this.showDirManagerCustom = showCustom
+      this.showDirManager = !this.showDirManager
+    },
+    setBusy: function (busy) { this.isBusy = busy},
     setError: async function (error) { this.$emit('error', error) },
   },
   computed: {
@@ -183,15 +149,17 @@ export default {
   async created() {
     this.$eventHub.$on('make-toast', this.makeToast)
     this.$eventHub.$on('set-busy', this.setBusy)
-    for (const modType in this.modTypes) {
-      await this.getModDir(Number(modType))
-    }
+    this.$eventHub.$on('toggle-dir-manager', this.toggleDirManager)
+    this.$eventHub.$on('update-progress', this.setProgressMessage)
   },
   beforeDestroy() {
     this.$eventHub.$off('make-toast')
     this.$eventHub.$off('set-busy')
+    this.$eventHub.$off('toggle-dir-manager')
+    this.$eventHub.$off('update-progress')
   },
   components: {
+    DirManager,
     LanguageSwitcher,
     Footer,
     SteamLibTable

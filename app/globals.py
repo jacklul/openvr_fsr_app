@@ -18,7 +18,8 @@ VRPERFKIT_CFG = 'vrperfkit.yml'
 APP_NAME = 'openvr_fsr_app'
 DATA_DIR = 'data'
 SETTINGS_DIR_NAME = 'openvr_fsr_app'
-USER_APP_PREFIX = '#Usr'
+USER_APP_PREFIX = 'Usr'
+CUSTOM_APP_PREFIX = '#'
 
 BASE_PATH = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__ + '/..')))
 
@@ -84,6 +85,9 @@ if any(re.findall(r'pytest|py.test', sys.argv[0])):
 else:
     PYTEST = False
 
+_test_data_input_path = Path(__file__).parent.parent / 'tests' / 'data' / 'input'
+_test_data_output_path = Path(__file__).parent.parent / 'tests' / 'data' / 'output'
+
 if not PYTEST:
     SETTINGS_FILE_NAME = 'settings.json' if FROZEN else 'settings_dev.json'
 else:
@@ -93,6 +97,11 @@ if not PYTEST:
     APPS_STORE_FILE_NAME = 'steam_apps.json'
 else:
     APPS_STORE_FILE_NAME = 'steam_apps_tests.json'
+
+if not PYTEST:
+    CUSTOM_APPS_STORE_FILE_NAME = '_apps.json'
+else:
+    CUSTOM_APPS_STORE_FILE_NAME = '_apps_tests.json'
 
 
 def check_and_create_dir(directory: Union[str, Path]) -> str:
@@ -113,7 +122,10 @@ def get_current_modules_dir() -> str:
 
 
 def get_settings_dir() -> Path:
-    return Path(check_and_create_dir(user_data_dir(SETTINGS_DIR_NAME, '')))
+    if PYTEST:
+        return Path(check_and_create_dir(_test_data_output_path / 'settings_dir'))
+    else:
+        return Path(check_and_create_dir(user_data_dir(SETTINGS_DIR_NAME, '')))
 
 
 def _get_user_doc_dir() -> Path:

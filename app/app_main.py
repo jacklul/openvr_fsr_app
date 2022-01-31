@@ -56,6 +56,21 @@ def add_custom_app(app: dict):
 
 
 @eel.expose
+def add_custom_dir(path: str):
+    return app_fn.add_custom_dir_fn(path)
+
+
+@eel.expose
+def remove_custom_dir(dir_id: str):
+    return app_fn.remove_custom_dir_fn(dir_id)
+
+
+@eel.expose
+def get_custom_dirs():
+    return app_fn.get_custom_dirs_fn()
+
+
+@eel.expose
 def get_mod_dir(mod_type):
     return app_fn.get_mod_dir_fn(mod_type)
 

@@ -2,7 +2,7 @@ import json
 import logging
 from pathlib import Path
 
-from app.globals import get_settings_dir, SETTINGS_FILE_NAME, APPS_STORE_FILE_NAME, KNOWN_APPS
+import app.globals as app_globals
 from app.util.utils import JsonRepr
 
 
@@ -14,8 +14,10 @@ class AppSettings(JsonRepr):
     backup_created = False
     needs_admin = False
     previous_version = str()
-    user_apps = dict()
-    user_app_counter = len(user_apps.keys())
+
+    user_app_directories = {
+        app_globals.USER_APP_PREFIX: app_globals.get_settings_dir().as_posix(),
+    }
 
     open_vr_fsr_versions = {
         'v0.5': 'd74d3083e3506d83fac0d95520625eab',
@@ -60,11 +62,15 @@ class AppSettings(JsonRepr):
         override_path = None
         if cls.SETTINGS_FILE_OVR:
             override_path = Path(cls.SETTINGS_FILE_OVR)
-        return override_path or get_settings_dir() / SETTINGS_FILE_NAME
+        return override_path or app_globals.get_settings_dir() / app_globals.SETTINGS_FILE_NAME
 
     @staticmethod
     def _get_steam_apps_file() -> Path:
-        return get_settings_dir() / APPS_STORE_FILE_NAME
+        return app_globals.get_settings_dir() / app_globals.APPS_STORE_FILE_NAME
+
+    @staticmethod
+    def _get_custom_dir_file(dir_id: str) -> Path:
+        return app_globals.get_settings_dir() / f'{dir_id}{app_globals.CUSTOM_APPS_STORE_FILE_NAME}'
 
     @classmethod
     def save(cls):
@@ -95,10 +101,45 @@ class AppSettings(JsonRepr):
 
         # -- Convert str dict keys to int
         AppSettings.mod_data_dirs = {int(k): v for k, v in AppSettings.mod_data_dirs.items()}
+        # -- Create UserApps fake dir
+        if app_globals.USER_APP_PREFIX not in AppSettings.user_app_directories:
+            AppSettings.user_app_directories.update({
+                app_globals.USER_APP_PREFIX: app_globals.get_settings_dir().as_posix(),
+            })
         return True
 
     @classmethod
-    def save_steam_apps(cls, steam_apps: dict):
+    def extract_custom_apps(cls, steam_apps: dict) -> dict:
+        # -- Setup custom apps dict
+        custom_apps = dict()
+        for dir_id in AppSettings.user_app_directories:
+            custom_apps[dir_id] = dict()
+
+        # -- Extract custom dir apps
+        extract_ids = set()
+        for app_id in steam_apps:
+            for dir_id in AppSettings.user_app_directories:
+                if app_id.startswith(dir_id):
+                    extract_ids.add(app_id)
+                    custom_apps[dir_id][app_id] = steam_apps.get(app_id)
+
+        # -- Remove from steam_apps
+        for app_id in extract_ids:
+            steam_apps.pop(app_id)
+
+        return custom_apps
+
+    @classmethod
+    def save_steam_apps(cls, steam_apps: dict) -> bool:
+        # -- Save apps in custom app dirs
+        custom_apps = cls.extract_custom_apps(steam_apps)
+        for dir_id in AppSettings.user_app_directories:
+            cls.save_custom_dir_apps(dir_id, custom_apps[dir_id])
+
+        if not steam_apps:
+            return True
+
+        # -- Save steam apps
         file = cls._get_steam_apps_file()
 
         try:
@@ -112,9 +153,13 @@ class AppSettings(JsonRepr):
 
     @classmethod
     def load_steam_apps(cls) -> dict:
+        # -- Add custom dir apps
+        custom_apps = cls.load_custom_dir_apps()
+
+        # -- Locate cached steam apps
         file = cls._get_steam_apps_file()
         if not file.exists():
-            return dict()
+            return custom_apps
 
         try:
             with open(file.as_posix(), 'r') as f:
@@ -126,7 +171,67 @@ class AppSettings(JsonRepr):
 
         # -- Add Known Apps data
         for app_id, entry in steam_apps.items():
-            if app_id in KNOWN_APPS:
-                entry.update(KNOWN_APPS[app_id])
+            if app_id in app_globals.KNOWN_APPS:
+                entry.update(app_globals.KNOWN_APPS[app_id])
+
+        # -- Merge in custom apps
+        steam_apps.update(custom_apps)
 
         return steam_apps
+
+    @classmethod
+    def save_custom_dir_apps(cls, dir_id, custom_apps) -> bool:
+        file = cls._get_custom_dir_file(dir_id)
+
+        try:
+            with open(file.as_posix(), 'w') as f:
+                # noinspection PyTypeChecker
+                f.write(json.dumps(custom_apps))
+        except Exception as e:
+            logging.error('Could not store custom apps to file! %s', e)
+            return False
+        return True
+
+    @classmethod
+    def remove_custom_dir_apps(cls, dir_id) -> bool:
+        file = cls._get_custom_dir_file(dir_id)
+
+        try:
+            file.unlink()
+        except Exception as e:
+            logging.error('Could not remove custom apps cache file! %s', e)
+            return False
+        return True
+
+    @classmethod
+    def load_custom_dir_apps(cls) -> dict:
+        custom_apps = dict()
+        remove_dirs = set()
+
+        for dir_id in AppSettings.user_app_directories:
+            custom_apps[dir_id] = dict()
+            file = cls._get_custom_dir_file(dir_id)
+            if not file.exists():
+                remove_dirs.add(dir_id)
+                continue
+
+            try:
+                with open(file.as_posix(), 'r') as f:
+                    # noinspection PyTypeChecker
+                    custom_apps[dir_id] = json.load(f)
+            except Exception as e:
+                logging.error('Could not load custom apps from file! %s', e)
+                return dict()
+
+        # -- Remove dirs that have no app cache file
+        for dir_id in remove_dirs:
+            AppSettings.user_app_directories.pop(dir_id)
+
+        result_apps = dict()
+        for dir_id in custom_apps:
+            result_apps.update(custom_apps[dir_id])
+
+        for app_id in result_apps:
+            result_apps[app_id]['userApp'] = True
+
+        return result_apps
