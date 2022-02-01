@@ -5,8 +5,10 @@ from pathlib import WindowsPath, Path
 
 import app
 import app.mod
+import app.util.utils
 from app.app_settings import AppSettings
-from app.util.manifest_worker import ManifestWorker, run_update_steam_apps
+from app.mod import get_available_mods
+from app.util.manifest_worker import run_update_steam_apps
 from app.util.custom_app import create_custom_app, scan_custom_library
 from app.util.utils import get_name_id
 
@@ -85,8 +87,7 @@ def load_steam_lib_fn():
     return json.dumps({'result': True, 'data': steam_apps, 'reScanRequired': re_scan_required})
 
 
-@app.utils.capture_app_exceptions
-def scan_custom_libs_fn(dir_id: str):
+def scan_custom_libs(dir_id: str):
     """ Scan and save a custom library """
     logging.debug(f'Reading Custom Library: {dir_id}')
     if dir_id not in AppSettings.user_app_directories:
@@ -108,14 +109,18 @@ def scan_custom_libs_fn(dir_id: str):
 
 
 @app.utils.capture_app_exceptions
-def get_steam_lib_fn():
+def scan_app_lib_fn():
     """ Refresh SteamLib and re-scan every app directory """
     logging.debug('Reading Steam Library')
+
+    # -- Load currently cached custom apps before
+    #    they get overwritten by the scan
+    cached_custom_apps = AppSettings.load_custom_dir_apps()
 
     # -- Read custom libraries and store result to disk
     #    Custom Apps will be loaded with AppSettings.load_steam_apps
     for dir_id in AppSettings.user_app_directories:
-        scan_custom_libs_fn(dir_id)
+        scan_custom_libs(dir_id)
 
     try:
         # -- Read this machines Steam library
@@ -133,20 +138,30 @@ def get_steam_lib_fn():
         return json.dumps({'result': False, 'msg': msg})
 
     logging.debug('Acquiring OpenVR Dll locations for %s Steam Apps.', len(steam_apps.keys()))
-    # steam_apps = ManifestWorker.update_steam_apps(steam_apps)
     steam_apps = run_update_steam_apps(steam_apps)
 
     # -- Restore Mod settings cached on disk and add custom apps
     cached_steam_apps = AppSettings.load_steam_apps()
 
-    for app_id, entry in cached_steam_apps.items():
+    # -- Restore cached selected installation paths for custom apps
+    for app_id, cached_entry in cached_custom_apps.items():
+        for mod in get_available_mods(dict()):
+            if mod.DLL_LOC_KEY_SELECTED in cached_entry:
+                cached_steam_apps[app_id][mod.DLL_LOC_KEY_SELECTED] = cached_entry[mod.DLL_LOC_KEY_SELECTED]
+
+    for app_id, cached_entry in cached_steam_apps.items():
         if app_id in steam_apps:
+            # -- Restore cached selected installation paths for steam apps
+            for mod in get_available_mods(dict()):
+                if mod.DLL_LOC_KEY_SELECTED in cached_entry:
+                    steam_apps[app_id][mod.DLL_LOC_KEY_SELECTED] = cached_entry[mod.DLL_LOC_KEY_SELECTED]
+
             steam_apps.update(_load_steam_apps_with_mod_settings({app_id: steam_apps[app_id]}, scan_mod=True))
 
         # -- Add custom apps
         for dir_id in AppSettings.user_app_directories:
             if app_id.startswith(dir_id):
-                steam_apps[app_id] = entry
+                steam_apps[app_id] = cached_entry
 
     # -- Cache updated SteamApps to disk
     try:
@@ -249,7 +264,7 @@ def add_custom_dir_fn(path: str):
     AppSettings.save()
 
     # -- Scan custom app dir
-    result_dict = json.loads(scan_custom_libs_fn(new_dir_id))
+    result_dict = json.loads(scan_custom_libs(new_dir_id))
     if not result_dict['result']:
         return json.dumps(result_dict)
 
@@ -314,6 +329,7 @@ def toggle_mod_install_fn(manifest: dict, mod_type: int = 0):
     # -- Uninstall
     elif mod_installed is True:
         uninstall_result = mod.uninstall()
+        mod.update_from_disk()
         if uninstall_result:
             mod.manifest[mod.VAR_NAMES['version']] = str()
         return json.dumps({'result': uninstall_result, 'msg': mod.error, 'manifest': mod.manifest})

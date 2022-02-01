@@ -75,7 +75,7 @@ def test_load_steam_lib_fn(app_settings):
 
 
 def test_get_steam_lib_fn(steam_apps_obj):
-    result_dict = json.loads(app_fn.get_steam_lib_fn())
+    result_dict = json.loads(app_fn.scan_app_lib_fn())
     test_app = result_dict['data']['123']
 
     LOGGER.info(f'Result: {result_dict}')
@@ -88,7 +88,7 @@ def test_get_steam_lib_fn(steam_apps_obj):
 def test_scan_custom_lib(app_settings, custom_lib_path, custom_dir_id, custom_app_id, steam_apps_obj):
     app_settings.user_app_directories[custom_dir_id] = custom_lib_path.as_posix()
 
-    result_dict = json.loads(app_fn.scan_custom_libs_fn(custom_dir_id))
+    result_dict = json.loads(app_fn.scan_custom_libs(custom_dir_id))
     apps = result_dict['data']
 
     assert result_dict['result'] is True
@@ -102,7 +102,7 @@ def test_scan_custom_lib(app_settings, custom_lib_path, custom_dir_id, custom_ap
 def test_save_lib_fn(steam_apps_obj, custom_lib_path):
     # -- Test scan
     app_fn.add_custom_dir_fn(custom_lib_path.as_posix())
-    result_dict = json.loads(app_fn.get_steam_lib_fn())
+    result_dict = json.loads(app_fn.scan_app_lib_fn())
     test_apps = result_dict['data']
 
     # -- Test save
