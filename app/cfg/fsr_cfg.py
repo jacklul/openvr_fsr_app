@@ -39,7 +39,7 @@ class FsrSettings(BaseModSettings):
                  "If =1, effectively disables upsampling, but you'll still get the sharpening stage. "
                  "AMD presets: Ultra Quality => 0.77 Quality       => 0.67 Balanced      => 0.59 "
                  "Performance   => 0.50",
-            value=0.77,
+            value=0.8,
             settings=[{'settingType': 'range', 'min': 0.10, 'max': 3.0, 'step': 0.01, 'display': 'floatpercent'}]
         )
         self.sharpness = BaseModCfgSetting(
