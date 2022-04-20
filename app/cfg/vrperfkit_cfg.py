@@ -124,7 +124,7 @@ class VRPerfKitSettings(BaseModSettings):
                  " at 1/16th resolution."
                  " Fixed foveated rendering is achieved with Variable Rate Shading. This technique is only"
                  " available on NVIDIA RTX and GTX 16xx cards.",
-            value=False,
+            value=True,
             settings=[{'value': True, 'name': 'On'}, {'value': False, 'name': 'Off'}]
         )
         self.ffrInnerRadius = BaseModCfgSetting(
